@@ -93,11 +93,12 @@
     };
   }
 
-  // Show whole points as integers, tie-break totals with up to 2 decimals.
+  // Show whole points as integers, tie-break totals with up to 3 decimals
+  // (enough to keep nested race-off results visibly distinct at the cut).
   function fmtPts(n) {
     const r = Math.round(n);
     if (Math.abs(n - r) < 1e-9) return String(r);
-    return String(Math.round(n * 100) / 100);
+    return String(Math.round(n * 1000) / 1000);
   }
 
   // =====================================================================
@@ -145,10 +146,6 @@
     characters = FALLBACK_CHARACTERS.slice();
     statusEl.textContent = "🎮 Roster API unavailable — using built-in racer icons.";
     statusEl.classList.add("ok");
-  }
-
-  function charByName(name) {
-    return characters.find((c) => c.name === name) || null;
   }
 
   // Render a character avatar (image if available, else emoji, else initial).
@@ -278,11 +275,14 @@
     if (rounds > 12) rounds = 12;
     state.config.rounds = rounds;
 
-    const pts = $("#cfgPoints").value
-      .split(/[,\s]+/)
-      .map((x) => parseInt(x, 10))
-      .filter((n) => Number.isFinite(n));
-    state.config.points = pts.length ? pts : [4, 3, 2, 1];
+    // Parse the points scheme. Invalid tokens become 0 (rather than being
+    // dropped, which would shift every later place); negatives clamp to 0.
+    // Fall back to the default only when nothing usable was entered.
+    const nums = $("#cfgPoints").value.split(/[,\s]+/).filter((t) => t.length).map((t) => parseInt(t, 10));
+    const anyValid = nums.some((n) => Number.isFinite(n) && n >= 0);
+    state.config.points = anyValid
+      ? nums.map((n) => (Number.isFinite(n) && n >= 0 ? n : 0))
+      : [4, 3, 2, 1];
   }
 
   function namedParticipants() {
@@ -531,6 +531,7 @@
       const { row, isPicked } = racerRowEl(race, id);
       if (!race.done && !isPicked) {
         row.addEventListener("click", () => {
+          if (race.order.includes(id)) return; // guard against double-tap re-adding
           race.order.push(id);
           if (race.order.length === race.playerIds.length) finalizeRace(race);
           save();
@@ -723,6 +724,7 @@
       const { row, isPicked } = racerRowEl(race, id);
       if (!isPicked) {
         row.addEventListener("click", () => {
+          if (race.order.includes(id)) return; // guard against double-tap re-adding
           race.order.push(id);
           race.done = race.order.length === race.playerIds.length;
           save();
@@ -926,9 +928,13 @@
   function wire() {
     $("#addParticipantBtn").addEventListener("click", addParticipant);
     $("#startBtn").addEventListener("click", startTournament);
-    $("#cfgRounds").addEventListener("change", () => { readConfig(); save(); });
-    $("#cfgPoints").addEventListener("change", () => { readConfig(); save(); });
-    $("#cfgCount").addEventListener("change", (e) => setParticipantCount(parseInt(e.target.value, 10)));
+    $("#cfgRounds").addEventListener("change", () => { readConfig(); $("#cfgRounds").value = state.config.rounds; save(); });
+    $("#cfgPoints").addEventListener("change", () => { readConfig(); $("#cfgPoints").value = state.config.points.join(", "); save(); });
+    $("#cfgCount").addEventListener("change", (e) => {
+      const n = parseInt(e.target.value, 10);
+      if (Number.isFinite(n)) setParticipantCount(n);
+      else renderSetup(); // ignore blank/garbage input; restore the shown count
+    });
     $("#countMinus").addEventListener("click", () => setParticipantCount(state.participants.length - 1));
     $("#countPlus").addEventListener("click", () => setParticipantCount(state.participants.length + 1));
     $("#resetBtn").addEventListener("click", () => resetTournament(true));

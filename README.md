@@ -2,6 +2,8 @@
 
 A tiny, dependency-free web app for running a Mario Kart tournament for **8–20 players** at a party — built with plain HTML, CSS, and JavaScript. No frameworks, no build step, works from a phone.
 
+**🎮 Play it live: https://wagner-laranjeiras.github.io/mk-tournament/**
+
 ## How it works
 
 ### Setup
