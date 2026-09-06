@@ -5,7 +5,8 @@ A tiny, dependency-free web app for running a Mario Kart tournament for **8–20
 ## How it works
 
 ### Setup
-- Enter 8–20 racer names.
+- Pick how many racers with the **"How many racers?"** stepper (8–20), then
+  name each one — or add/remove rows individually.
 - Pick a character for each racer. Characters and images are fetched from the
   unofficial [Mario Kart Tour API](https://mario-kart-tour-api.herokuapp.com/api/drivers).
   The roster is **cached in `localStorage`**, and if the API is slow or

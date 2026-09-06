@@ -50,6 +50,7 @@
     return n;
   };
   const uid = () => Math.random().toString(36).slice(2, 9);
+  const newParticipant = () => ({ id: uid(), name: "", charName: null, image: null, emoji: null, points: 0 });
 
   const screens = {
     setup: $("#screen-setup"),
@@ -178,7 +179,6 @@
       case "final": renderFinal(); show("final"); break;
       case "celebration": renderCelebration(); show("celebration"); break;
     }
-    $("#resetBtn").hidden = state.phase === "setup" && state.participants.length === 0;
   }
 
   // =====================================================================
@@ -187,12 +187,33 @@
   function renderSetup() {
     $("#cfgRounds").value = state.config.rounds;
     $("#cfgPoints").value = state.config.points.join(", ");
+    $("#cfgCount").value = state.participants.length;
 
     const list = $("#participantList");
     list.innerHTML = "";
     state.participants.forEach((p, i) => list.appendChild(participantRow(p, i)));
 
     updateSetupState();
+  }
+
+  // Grow/shrink the racer list to an exact count, preserving existing entries.
+  // When shrinking, trailing rows are dropped (empty ones first).
+  function setParticipantCount(n) {
+    n = Math.max(1, Math.min(20, Math.floor(n) || 0));
+    const cur = state.participants.length;
+    if (n > cur) {
+      for (let i = cur; i < n; i++) state.participants.push(newParticipant());
+    } else if (n < cur) {
+      // keep all named rows, then fill up to n with the remaining (empty) rows
+      const named = state.participants.filter((p) => p.name.trim());
+      const empty = state.participants.filter((p) => !p.name.trim());
+      const kept = named.concat(empty).slice(0, Math.max(n, named.length));
+      // preserve original order among the kept rows
+      const keptIds = new Set(kept.map((p) => p.id));
+      state.participants = state.participants.filter((p) => keptIds.has(p.id));
+    }
+    save();
+    renderSetup();
   }
 
   function participantRow(p, i) {
@@ -233,7 +254,7 @@
 
   function addParticipant() {
     if (state.participants.length >= 20) return;
-    state.participants.push({ id: uid(), name: "", charName: null, image: null, emoji: null, points: 0 });
+    state.participants.push(newParticipant());
     save();
     renderSetup();
     // focus the new name input
@@ -404,6 +425,34 @@
     return state.participants.find((p) => p.id === id);
   }
 
+  // Ids ordered for display: finished racers (in finish order) first, rest after.
+  function orderedDisplay(race) {
+    const pending = race.playerIds.filter((id) => !race.order.includes(id));
+    return race.order.concat(pending);
+  }
+
+  // Build one racer row (shared by qualifying races and the final).
+  function racerRowEl(race, id) {
+    const p = participant(id);
+    const pos = race.order.indexOf(id); // -1 if not yet placed
+    const isPicked = pos >= 0;
+    const row = el("div", "racer" + (isPicked ? " picked" : ""));
+
+    const posEl = el("div", "racer-pos");
+    if (isPicked) {
+      posEl.textContent = pos + 1;
+      if (pos < 3) posEl.classList.add("p" + (pos + 1));
+    } else {
+      posEl.textContent = "•";
+    }
+
+    const av = el("div", "avatar");
+    avatarInto(av, p.charName ? p : null);
+
+    row.append(posEl, av, el("span", "racer-name", p.name), el("span", "racer-pts", `${p.points} pts`));
+    return { row, isPicked };
+  }
+
   function renderQualifying() {
     $("#roundTitle").textContent = `Round ${state.currentRound} of ${state.config.rounds}`;
     const remaining = state.races.filter((r) => !r.done).length;
@@ -440,44 +489,17 @@
         ? "Tap Edit to re-enter the finishing order."
         : "Tap racers in the order they finished — 1st first."));
 
-    // ordered display: picked racers in finish order, then the rest.
-    const orderedIds = race.done ? race.order : race.order.slice();
-    const pending = race.playerIds.filter((id) => !orderedIds.includes(id));
-    const displayIds = orderedIds.concat(pending);
-
-    displayIds.forEach((id) => {
-      const p = participant(id);
-      const pickedPos = race.order.indexOf(id); // -1 if not yet picked
-      const isPicked = pickedPos >= 0;
-      const rowr = el("div", "racer" + (isPicked ? " picked" : ""));
-
-      const pos = el("div", "racer-pos");
-      if (isPicked) {
-        pos.textContent = pickedPos + 1;
-        if (pickedPos === 0) pos.classList.add("p1");
-        else if (pickedPos === 1) pos.classList.add("p2");
-        else if (pickedPos === 2) pos.classList.add("p3");
-      } else {
-        pos.textContent = "•";
-      }
-
-      const av = el("div", "avatar");
-      avatarInto(av, p.charName ? p : null);
-
-      const name = el("span", "racer-name", p.name);
-      const pts = el("span", "racer-pts", `${p.points} pts`);
-
-      rowr.append(pos, av, name, pts);
-
+    orderedDisplay(race).forEach((id) => {
+      const { row, isPicked } = racerRowEl(race, id);
       if (!race.done && !isPicked) {
-        rowr.addEventListener("click", () => {
+        row.addEventListener("click", () => {
           race.order.push(id);
           if (race.order.length === race.playerIds.length) finalizeRace(race);
           save();
           renderQualifying();
         });
       }
-      card.appendChild(rowr);
+      card.appendChild(row);
     });
 
     // actions
@@ -594,39 +616,17 @@
       race.done ? "Re-tap Edit to change the podium." : "Tap the finalists in finishing order — winner first.");
     wrap.appendChild(hint);
 
-    const orderedIds = race.order.slice();
-    const pending = race.playerIds.filter((id) => !orderedIds.includes(id));
-    const displayIds = orderedIds.concat(pending);
-
-    displayIds.forEach((id) => {
-      const p = participant(id);
-      const pickedPos = race.order.indexOf(id);
-      const isPicked = pickedPos >= 0;
-      const rowr = el("div", "racer" + (isPicked ? " picked" : ""));
-
-      const pos = el("div", "racer-pos");
-      if (isPicked) {
-        pos.textContent = pickedPos + 1;
-        if (pickedPos === 0) pos.classList.add("p1");
-        else if (pickedPos === 1) pos.classList.add("p2");
-        else if (pickedPos === 2) pos.classList.add("p3");
-      } else pos.textContent = "•";
-
-      const av = el("div", "avatar");
-      avatarInto(av, p.charName ? p : null);
-      const name = el("span", "racer-name", p.name);
-      const pts = el("span", "racer-pts", `${p.points} pts`);
-      rowr.append(pos, av, name, pts);
-
+    orderedDisplay(race).forEach((id) => {
+      const { row, isPicked } = racerRowEl(race, id);
       if (!isPicked) {
-        rowr.addEventListener("click", () => {
+        row.addEventListener("click", () => {
           race.order.push(id);
           race.done = race.order.length === race.playerIds.length;
           save();
           renderFinal();
         });
       }
-      wrap.appendChild(rowr);
+      wrap.appendChild(row);
     });
 
     const actions = el("div", "race-actions");
@@ -774,19 +774,45 @@
   }
 
   // =====================================================================
+  // CONFIRM DIALOG (in-app; native confirm() is blocked in sandboxes)
+  // =====================================================================
+  function confirmDialog(title, message, okText = "Start new") {
+    return new Promise((resolve) => {
+      const overlay = el("div", "modal confirm-overlay");
+      const box = el("div", "modal-box confirm-box");
+      box.appendChild(el("h3", "confirm-title", title));
+      if (message) box.appendChild(el("p", "confirm-msg", message));
+      const actions = el("div", "confirm-actions");
+      const cancel = el("button", "btn btn-ghost", "Cancel");
+      const ok = el("button", "btn btn-primary", okText);
+      actions.append(cancel, ok);
+      box.appendChild(actions);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      const close = (val) => { overlay.remove(); resolve(val); };
+      cancel.addEventListener("click", () => close(false));
+      ok.addEventListener("click", () => close(true));
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) close(false); });
+    });
+  }
+
+  // =====================================================================
   // RESET
   // =====================================================================
-  function resetTournament(confirmFirst = true) {
-    if (confirmFirst && state.participants.length &&
-        !confirm("Start a brand-new tournament? Current progress will be cleared.")) {
-      return;
+  function hasProgress() {
+    return state.phase !== "setup" || state.participants.some((p) => p.name.trim());
+  }
+
+  async function resetTournament(confirmFirst = true) {
+    if (confirmFirst && hasProgress()) {
+      const ok = await confirmDialog(
+        "Start a new tournament?",
+        "Current racers, points and race history will be cleared.");
+      if (!ok) return;
     }
     state = freshState();
-    save();
-    // add 8 empty rows to start
-    for (let i = 0; i < 8; i++) {
-      state.participants.push({ id: uid(), name: "", charName: null, image: null, emoji: null, points: 0 });
-    }
+    for (let i = 0; i < 8; i++) state.participants.push(newParticipant());
     save();
     render();
   }
@@ -799,6 +825,9 @@
     $("#startBtn").addEventListener("click", startTournament);
     $("#cfgRounds").addEventListener("change", () => { readConfig(); save(); });
     $("#cfgPoints").addEventListener("change", () => { readConfig(); save(); });
+    $("#cfgCount").addEventListener("change", (e) => setParticipantCount(parseInt(e.target.value, 10)));
+    $("#countMinus").addEventListener("click", () => setParticipantCount(state.participants.length - 1));
+    $("#countPlus").addEventListener("click", () => setParticipantCount(state.participants.length + 1));
     $("#resetBtn").addEventListener("click", () => resetTournament(true));
     $("#newTournamentBtn").addEventListener("click", () => resetTournament(false));
 
@@ -827,9 +856,7 @@
 
     // Seed empty setup rows on a truly fresh start.
     if (state.phase === "setup" && state.participants.length === 0) {
-      for (let i = 0; i < 8; i++) {
-        state.participants.push({ id: uid(), name: "", charName: null, image: null, emoji: null, points: 0 });
-      }
+      for (let i = 0; i < 8; i++) state.participants.push(newParticipant());
     }
     render();
     await loadCharacters();

@@ -117,6 +117,53 @@ h2 { margin: 0 0 4px; font-size: 1.3rem; }
   border-radius: 10px;
   background: #fbfaf6;
 }
+.count-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 0 4px;
+  padding: 12px 14px;
+  background: #fbfaf6;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.count-label { font-weight: 800; font-size: 0.95rem; }
+.stepper { display: flex; align-items: center; gap: 6px; }
+.step-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 10px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 1.3rem;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  transition: transform 0.08s ease, filter 0.15s;
+}
+.step-btn:active { transform: scale(0.92); }
+.step-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.stepper input {
+  width: 58px;
+  text-align: center;
+  font: inherit;
+  font-weight: 800;
+  font-size: 1.1rem;
+  padding: 9px 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.stepper input::-webkit-outer-spin-button,
+.stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
 .char-status {
   font-size: 0.82rem;
   padding: 8px 12px;
@@ -335,6 +382,17 @@ h2 { margin: 0 0 4px; font-size: 1.3rem; }
   animation: fade 0.2s ease;
 }
 .modal[hidden] { display: none; }
+.confirm-overlay { align-items: center; padding: 20px; }
+.confirm-box {
+  max-width: 380px;
+  border-radius: 18px;
+  text-align: center;
+  padding: 22px 20px;
+}
+.confirm-title { margin: 0 0 6px; font-size: 1.15rem; }
+.confirm-msg { color: var(--muted); font-size: 0.95rem; margin: 0 0 18px; line-height: 1.4; }
+.confirm-actions { display: flex; gap: 10px; }
+.confirm-actions .btn { flex: 1; }
 .modal-box {
   background: var(--paper);
   width: 100%;

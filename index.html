@@ -19,7 +19,16 @@
     <section id="screen-setup" class="screen">
       <div class="card">
         <h2>Set up the tournament</h2>
-        <p class="muted">Add 8–20 racers, pick a character for each, then start.</p>
+        <p class="muted">Set how many racers (8–20), name each one, pick a character, then start.</p>
+
+        <div class="count-control">
+          <span class="count-label">How many racers?</span>
+          <div class="stepper">
+            <button type="button" id="countMinus" class="step-btn" aria-label="Fewer racers">−</button>
+            <input type="number" id="cfgCount" min="8" max="20" value="8" inputmode="numeric" aria-label="Number of racers" />
+            <button type="button" id="countPlus" class="step-btn" aria-label="More racers">＋</button>
+          </div>
+        </div>
 
         <div class="config-row">
           <label>Qualifying rounds
