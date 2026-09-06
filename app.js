@@ -87,7 +87,17 @@
       races: [],        // current round races: {id, playerIds:[], order:[], done}
       history: [],      // [{round, races:[{playerIds, order}]}]
       final: null,      // {playerIds:[], order:[], done}
+      isTiebreaker: false, // current round is a Final-Four cut tie-break
+      tiebreakerNo: 0,     // how many tie-break rounds have run
+      tbEpsilon: 0.4,      // current tie-break bonus scale
     };
+  }
+
+  // Show whole points as integers, tie-break totals with up to 2 decimals.
+  function fmtPts(n) {
+    const r = Math.round(n);
+    if (Math.abs(n - r) < 1e-9) return String(r);
+    return String(Math.round(n * 100) / 100);
   }
 
   // =====================================================================
@@ -308,6 +318,8 @@
     state.currentRound = 1;
     state.history = [];
     state.final = null;
+    state.isTiebreaker = false;
+    state.tiebreakerNo = 0;
     state.races = buildRaces(shuffle(state.participants.map((p) => p.id)));
     save();
     render();
@@ -449,30 +461,56 @@
     const av = el("div", "avatar");
     avatarInto(av, p.charName ? p : null);
 
-    row.append(posEl, av, el("span", "racer-name", p.name), el("span", "racer-pts", `${p.points} pts`));
+    row.append(posEl, av, el("span", "racer-name", p.name), el("span", "racer-pts", `${fmtPts(p.points)} pts`));
     return { row, isPicked };
   }
 
   function renderQualifying() {
-    $("#roundTitle").textContent = `Round ${state.currentRound} of ${state.config.rounds}`;
+    const tb = state.isTiebreaker;
     const remaining = state.races.filter((r) => !r.done).length;
-    $("#roundSub").textContent = remaining === 0
-      ? "All races scored — ready for the next round."
-      : `${state.races.length} race${state.races.length === 1 ? "" : "s"} · enter each finishing order. Points: ${state.config.points.join("/")}`;
+
+    $("#roundTitle").textContent = tb
+      ? `⚔️ Tie-break${state.tiebreakerNo > 1 ? " " + state.tiebreakerNo : ""}`
+      : `Round ${state.currentRound} of ${state.config.rounds}`;
+
+    $("#roundSub").textContent = tb
+      ? (remaining === 0
+          ? "All tie-break races scored — checking the cut."
+          : "Racers level on points at the cut line race to settle the Final Four.")
+      : (remaining === 0
+          ? "All races scored — ready for the next round."
+          : `${state.races.length} race${state.races.length === 1 ? "" : "s"} · enter each finishing order. Points: ${state.config.points.join("/")}`);
 
     const cont = $("#racesContainer");
     cont.innerHTML = "";
+    if (tb) cont.appendChild(tieBreakBanner());
     state.races.forEach((race, i) => cont.appendChild(raceCard(race, i)));
 
     const allDone = state.races.every((r) => r.done);
     const btn = $("#nextRoundBtn");
     btn.disabled = !allDone;
-    const isLast = state.currentRound >= state.config.rounds;
+
+    // A finished last round may still trigger a race-off if the cut is tied.
+    const finishing = tb || state.currentRound >= state.config.rounds;
+    const tiePending = allDone && finishing && cutBubble().length > 0;
     btn.textContent = !allDone
       ? "Score every race to continue"
-      : isLast
+      : tiePending
+      ? "⚔️ Race off the tie for 4th"
+      : finishing
       ? "🏆 Go to the Final Four"
       : `Start Round ${state.currentRound + 1}`;
+  }
+
+  function tieBreakBanner() {
+    const ids = state.races.flatMap((r) => r.playerIds);
+    const vals = ids.map((id) => (participant(id) || {}).points || 0);
+    const tiedAt = vals.length ? Math.floor(Math.min(...vals)) : 0; // pre-bonus total
+    const banner = el("div", "tie-banner");
+    banner.appendChild(el("strong", null, "🟰 Race-off for the Final Four"));
+    banner.appendChild(el("p", null,
+      `${ids.length} racers are level around ${tiedAt} pts at the cut line. This extra round settles who advances — the top 4 must finish clear on points.`));
+    return banner;
   }
 
   function raceCard(race, i) {
@@ -529,22 +567,65 @@
     return card;
   }
 
-  function awardPoints(order) {
-    order.forEach((id, pos) => {
+  // Points a given finish position is worth in the current round (a normal
+  // qualifying race uses the configured scheme; a tie-break uses tiny bonuses).
+  function pointsFor(pos, size) {
+    return state.isTiebreaker ? tiebreakBonus(pos, size) : (state.config.points[pos] || 0);
+  }
+  function awardPoints(race) {
+    race.order.forEach((id, pos) => {
       const p = participant(id);
-      if (p) p.points += (state.config.points[pos] || 0);
+      if (p) p.points += pointsFor(pos, race.order.length);
     });
   }
   function clearRacePoints(race) {
     // subtract the points this race previously awarded
     race.order.forEach((id, pos) => {
       const p = participant(id);
-      if (p) p.points -= (state.config.points[pos] || 0);
+      if (p) p.points -= pointsFor(pos, race.order.length);
     });
   }
   function finalizeRace(race) {
-    awardPoints(race.order);
+    awardPoints(race);
     race.done = true;
+  }
+
+  const EPS = 1e-9;
+
+  // The Final-Four cut is "clean" only when 4th place strictly out-points 5th.
+  // If they're level, every racer sharing that boundary point total is on the
+  // bubble and must race again. Returns the tied ids (empty when the cut is clean).
+  function cutBubble() {
+    const s = standings();
+    if (s.length <= 4) return [];
+    const boundary = s[3].points;                 // 4th place total
+    if (s[4].points < boundary - EPS) return [];  // strictly clear → clean cut
+    return s.filter((p) => Math.abs(p.points - boundary) < EPS).map((p) => p.id);
+  }
+
+  function startTiebreaker(bubble) {
+    state.isTiebreaker = true;
+    state.tiebreakerNo += 1;
+
+    // Tie-break points must separate the tied racers WITHOUT leapfrogging any
+    // racer above or below them, so we award a small bonus that fits inside the
+    // gap to the nearest non-tied racer (integer gaps are ≥1). This guarantees
+    // the top 4 end strictly clear on points while everyone else keeps their place.
+    const P = participant(bubble[0]).points;
+    let above = Infinity, below = -Infinity;
+    state.participants.forEach((p) => {
+      if (p.points > P + EPS && p.points < above) above = p.points;
+      if (p.points < P - EPS && p.points > below) below = p.points;
+    });
+    const room = Math.min(above - P, P - below, 1);
+    state.tbEpsilon = (isFinite(room) && room > 0 ? room : 1) * 0.4;
+
+    state.races = buildRaces(shuffle(bubble)); // equal points → random grouping
+  }
+
+  // Small, ordered, collision-free bonus for a tie-break finish (within a race).
+  function tiebreakBonus(pos, size) {
+    return (state.tbEpsilon || 0.4) * (size - pos) / size;
   }
 
   function nextRound() {
@@ -553,21 +634,43 @@
     // archive this round
     state.history.push({
       round: state.currentRound,
+      tiebreaker: !!state.isTiebreaker,
+      tiebreakerNo: state.isTiebreaker ? state.tiebreakerNo : 0,
       races: state.races.map((r) => ({ playerIds: r.playerIds.slice(), order: r.order.slice() })),
     });
 
-    if (state.currentRound >= state.config.rounds) {
-      // advance to final four
-      const top4 = standings().slice(0, 4).map((p) => p.id);
-      state.final = { playerIds: top4, order: [], done: false };
-      state.phase = "final";
+    // More scheduled qualifying rounds still to run.
+    if (!state.isTiebreaker && state.currentRound < state.config.rounds) {
+      state.currentRound += 1;
+      state.races = buildRaces(seededOrder());
       save();
       render();
       return;
     }
 
-    state.currentRound += 1;
-    state.races = buildRaces(seededOrder());
+    // Qualifying (or a tie-break) just finished: the top 4 must be strictly
+    // clear of 5th. If racers are tied across the cut line, race them again.
+    const bubble = cutBubble();
+    if (bubble.length > 0) {
+      const justRaced = state.isTiebreaker ? state.races.flatMap((r) => r.playerIds) : [];
+      // Guard against a points scheme that can't separate them (e.g. duplicate
+      // top values) causing an endless race-off.
+      const noProgress =
+        justRaced.length === bubble.length && justRaced.every((id) => bubble.includes(id));
+      if (!noProgress && state.tiebreakerNo < 20) {
+        startTiebreaker(bubble);
+        save();
+        render();
+        return;
+      }
+      // else: fall through — standings() order settles the last spots.
+    }
+
+    // Clean cut → Final Four.
+    state.isTiebreaker = false;
+    const top4 = standings().slice(0, 4).map((p) => p.id);
+    state.final = { playerIds: top4, order: [], done: false };
+    state.phase = "final";
     save();
     render();
   }
@@ -597,7 +700,7 @@
       li.appendChild(av);
 
       li.appendChild(el("span", "board-name", p.name));
-      li.appendChild(el("span", "board-pts", `${p.points} pts`));
+      li.appendChild(el("span", "board-pts", `${fmtPts(p.points)} pts`));
       list.appendChild(li);
     });
     $("#boardModal").hidden = false;
@@ -745,7 +848,7 @@
         body.appendChild(el("div", "rest-msg", restMessage(rank, ranking.length)));
         row.appendChild(body);
 
-        row.appendChild(el("span", "rest-pts", `${p.points} pts`));
+        row.appendChild(el("span", "rest-pts", `${fmtPts(p.points)} pts`));
         rest.appendChild(row);
       });
       wrap.appendChild(rest);

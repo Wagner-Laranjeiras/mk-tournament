@@ -247,6 +247,15 @@ h2 { margin: 0 0 4px; font-size: 1.3rem; }
 .round-head h2 { font-size: 1.4rem; }
 
 #racesContainer { display: flex; flex-direction: column; gap: 14px; }
+.tie-banner {
+  background: linear-gradient(135deg, #fff4d6, #ffe9a8);
+  border: 1px solid var(--gold);
+  border-left: 5px solid var(--gold);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.tie-banner strong { display: block; font-size: 1rem; color: #7a5a00; margin-bottom: 3px; }
+.tie-banner p { margin: 0; font-size: 0.85rem; color: #6b5320; line-height: 1.4; }
 .race-card {
   background: var(--card);
   border-radius: var(--radius);

@@ -23,6 +23,11 @@ A tiny, dependency-free web app for running a Mario Kart tournament for **8–20
 - Enter each race's finishing order by tapping racers 1st→last; points are
   awarded automatically. A running leaderboard is always a tap away.
 - After the set number of rounds, the **top 4 by points** advance.
+- **Tie-break race-off:** if the 4th and 5th racers are level on points, the
+  cut is ambiguous, so the tied racers run one or more extra race-offs until
+  the top 4 are *strictly* clear on points. The race-off awards small ordering
+  bonuses that separate the tied racers **without disturbing anyone above or
+  below them**, so a racer who was already safely ahead can't be knocked out.
 
 ### Final Four
 - The top 4 race head-to-head one last time. **This race decides the official
